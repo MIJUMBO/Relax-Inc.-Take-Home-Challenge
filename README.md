@@ -1,69 +1,140 @@
 # Relax Inc. Take-Home Challenge — Predicting Future User Adoption
 
-Predicting whether a newly registered user will become an **adopted user** — defined as logging in on three separate days within at least one rolling 7-day period — using only information available at signup.
+## Executive Summary
 
-**Business question:** Which characteristics of newly registered users best predict future user adoption?
+This project develops a machine learning model to predict whether a newly registered user will become an **adopted user**—defined as logging in on at least three separate days within any rolling seven-day period—using only information available at signup.
 
-## Data
+**Business Question**
+> Which characteristics of newly registered users best predict future user adoption?
 
-Two tables covering 12,000 users who signed up over a two-year period:
+**Champion Model:** Tuned XGBoost
 
-| File | Contents |
-|---|---|
-| `takehome_users.csv` | User attributes: creation source, signup timestamp, email, organization, invitation, marketing flags |
-| `takehome_user_engagement.csv` | 207,917 login records (user id, timestamp) |
+**Cross-Validation ROC-AUC:** **0.643 ± 0.013**
 
-The adoption label is constructed from the engagement table with a sliding 7-day window over each user's unique login days. **1,602 of 12,000 users (13.4%) qualify as adopted**, so accuracy is uninformative (~87% by predicting the majority class) and models are evaluated with ROC-AUC.
+**Held-out Test ROC-AUC:** **0.649**
 
-## Methodology
+The results show that signup characteristics provide meaningful predictive power but explain only part of future adoption. This suggests that while acquisition channels matter, post-signup onboarding and engagement strategies are equally important for improving long-term user adoption.
 
-**Leakage discipline.** Only signup-time information enters the model:
-- `last_session_creation_time` — excluded (post-signup information; target leakage)
-- `account_age_days` — excluded (exposure confound: earlier signups had more time to meet the adoption criterion)
-- `org_id` — excluded after a three-way **ablation** comparing cross-fitted target encoding, exclusion, and LightGBM native categorical handling; exclusion performed best, showing org-specific effects do not generalize beyond training organizations
+---
 
-**Feature engineering.** Invitation indicators, inviter activity (total invites sent by the user's inviter), organization size and large-org indicators, email domain (top domains + other), and signup timing.
+# Data
 
-**Modeling.** Logistic Regression baseline plus Random Forest, XGBoost, and LightGBM in a shared scikit-learn pipeline (one-hot encoding + standardization). Tree-model hyperparameters tuned with **Optuna** (TPE sampler, 5-fold CV on the training split only). Champion selected on **cross-validation** — never on the test set — with the held-out test score reported once as confirmation.
-
-## Results
-
-| Model | Mean CV ROC-AUC | Held-out Test ROC-AUC |
-|---|---|---|
-| **XGBoost (champion, tuned)** | **0.643 ± 0.013** | **0.649** |
-| Random Forest (tuned) | 0.639 ± 0.013 | 0.644 |
-| LightGBM (tuned) | 0.633 ± 0.008 | 0.642 |
-| Logistic Regression | 0.610 ± 0.013 | 0.620 |
-
-Tuned ensembles beat the linear baseline by ~2 standard deviations, indicating modest non-linear structure in the signal.
-
-## Key findings
-
-- **Signup pathway is the key actionable factor.** Adoption ranges from ~16.5% (guest invites) and ~15.1% (organization invites) down to ~7.9% (personal-project signups) — a more-than-twofold spread across creation sources.
-- **Organizational context matters** — and users in *smaller* organizations adopt at higher rates than those in larger ones.
-- **Signup month tops raw permutation importance but is substantially an observation-window artifact**, confirmed by a cohort diagnostic (adoption falls monotonically from 17.8% for the Oct 2013 cohort to 1.3% for May 2014, since recent signups had little time to qualify). It is retained as a control, not interpreted as actionable; a fixed-window adoption label is the recommended refinement.
-- **Marketing flags, signup weekday, and signup hour contribute ~nothing** — the current email-marketing levers show no relationship with adoption.
-- **The moderate ceiling (~0.65 AUC) is itself the insight:** signup-time attributes only partially determine adoption, so post-signup onboarding warrants at least equal investment with acquisition targeting.
-
-Feature attribution uses **gain-based importance** (not split counts, which mechanically inflate continuous features) cross-checked with **permutation importance** on the held-out test set.
-
-## Repository contents
+The analysis uses two datasets covering **12,000 users** and **207,917 login events**.
 
 | File | Description |
-|---|---|
-| `Relax Inc. Take-Home Challenge.ipynb` | Full analysis: label construction, EDA, feature engineering, ablation, Optuna tuning, model comparison, importance analysis |
-| `Relax_Takehome_Writeup.md` | One-page summary of findings and recommendations |
-| `takehome_users.csv`, `takehome_user_engagement.csv` | Input data (if not included, place them beside the notebook) |
+|------|-------------|
+| `takehome_users.csv` | User attributes available at signup |
+| `takehome_user_engagement.csv` | Historical login records used to construct the adoption label |
 
-## How to run
+An adopted user is defined as someone who logs in on **three separate days within any rolling seven-day period**.
+
+Overall, **1,602 of 12,000 users (13.4%)** met the adoption criterion. Because of this class imbalance, **ROC-AUC** was selected as the primary evaluation metric instead of accuracy.
+
+---
+
+# Methodology
+
+This project follows the **CRISP-DM** framework.
+
+### Data Preparation
+
+To ensure a realistic production model, only information available **at the time of registration** was used.
+
+The following variables were intentionally excluded:
+
+- **last_session_creation_time** (target leakage)
+- **account_age_days** (observation-window bias)
+- **org_id** (high-cardinality feature that did not generalize well)
+
+An ablation study comparing target encoding, LightGBM categorical handling, and feature exclusion confirmed that removing `org_id` produced the strongest generalization performance.
+
+### Feature Engineering
+
+Additional predictors included:
+
+- Organization size
+- Large organization indicator
+- Invitation status
+- Inviter activity
+- Email domain
+- Signup timing features
+
+### Model Development
+
+Four models were evaluated:
+
+- Logistic Regression
+- Random Forest
+- XGBoost
+- LightGBM
+
+Tree-based models were optimized using **Optuna** with five-fold cross-validation.
+
+The champion model was selected exclusively from cross-validation performance and evaluated once on a held-out test set.
+
+---
+
+# Results
+
+| Model | Mean CV ROC-AUC | Test ROC-AUC |
+|------|------:|------:|
+| **XGBoost (Champion)** | **0.643 ± 0.013** | **0.649** |
+| Random Forest | 0.639 ± 0.013 | 0.644 |
+| LightGBM | 0.633 ± 0.008 | 0.642 |
+| Logistic Regression | 0.610 ± 0.013 | 0.620 |
+
+The tuned ensemble models consistently outperformed the linear baseline, indicating that user adoption contains meaningful non-linear relationships.
+
+---
+
+# Key Findings
+
+- **Signup source is the strongest actionable predictor** of future adoption.
+- **Users from smaller organizations adopt more frequently** than those from larger organizations.
+- **Signup month appeared highly predictive but primarily reflected observation-window bias rather than true business behavior.**
+- **Marketing flags, signup weekday, and signup hour contributed little predictive value.**
+- **The moderate predictive ceiling (ROC-AUC ≈ 0.65) suggests that signup information alone cannot fully explain adoption, highlighting the importance of post-signup engagement.**
+
+Feature importance was validated using both gain-based importance and permutation importance on the held-out test set.
+
+---
+
+# Business Recommendations
+
+- Prioritize onboarding for users predicted to have a low probability of adoption.
+- Personalize onboarding based on signup source and organizational context.
+- Invest in post-signup engagement initiatives since signup characteristics explain only part of user behavior.
+- Redefine adoption using a fixed observation window in future analyses to eliminate remaining temporal bias.
+
+---
+
+# Repository Contents
+
+| File | Description |
+|------|-------------|
+| `Relax Inc. Take-Home Challenge.ipynb` | Complete analysis, modeling, feature engineering, Optuna tuning, and interpretation |
+| `Relax_Takehome_Writeup.md` | Executive summary of findings |
+| `takehome_users.csv` | User dataset |
+| `takehome_user_engagement.csv` | Login history dataset |
+
+---
+
+# How to Run
 
 ```bash
 pip install pandas numpy scikit-learn xgboost lightgbm optuna category_encoders seaborn matplotlib shap
+
 jupyter notebook "Relax Inc. Take-Home Challenge.ipynb"
 ```
 
-Run all cells top to bottom. The Optuna tuning cell takes ~6 minutes (2-minute budget per tree model); all other cells run in seconds.
+The notebook is fully reproducible. Hyperparameter tuning requires approximately six minutes, while all remaining analyses execute within seconds.
 
-## Author
+---
 
-**Michael Jumbo** — [GitHub](https://github.com/MIJUMBO) · Warwick MBA · Springboard Data Science
+# Author
+
+**Michael Jumbo**
+
+- Springboard Data Science Career Track
+- Warwick MBA
+- GitHub: https://github.com/MIJUMBO
